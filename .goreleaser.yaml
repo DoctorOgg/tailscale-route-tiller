@@ -1,0 +1,25 @@
+project_name: tailscale-route-tiller
+builds:
+  - env: [CGO_ENABLED=0]
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+nfpms:
+  - maintainer: Dr Ogg <ogg@sr375.com
+    description: tailscale-route-tiller
+    homepage: https://github.com/caarlos0/tasktimer
+    license: MIT
+    formats:
+      - deb
+      - rpm
+
+archives:
+  - id: tar
+    format: tar.gz
+    files:
+      - LICENSE
+      - README.md

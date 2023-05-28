@@ -1,0 +1,8 @@
+TailscaleclientId: "EXAMPLE-CLIENT-ID"
+TailscaleKey: "DUMMY-KEY"
+subnets:
+  - 10.49.0.0/24
+sites:
+  - google.com
+TailscaleCommand: /usr/bin/tailscale up --accept-dns=false --advertise-routes=%s
+EnableIpv6: false
