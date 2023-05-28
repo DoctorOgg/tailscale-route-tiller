@@ -21,5 +21,4 @@ archives:
   - id: tar
     format: tar.gz
     files:
-      - LICENSE
       - README.md
