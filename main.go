@@ -17,6 +17,12 @@ import (
 
 var subnets []string
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 // Config is a struct for our YAML data
 type Config struct {
 	Subnets           []string `yaml:"subnets"`
@@ -25,6 +31,10 @@ type Config struct {
 	EnableIpv6        bool     `yaml:"EnableIpv6"`
 	TailscaleclientId string   `yaml:"TailscaleclientId"`
 	TailscaleKey      string   `yaml:"TailscaleKey"`
+}
+
+type IPSubnet struct {
+	Network net.IPNet
 }
 
 var ActiveConfig *Config
@@ -205,8 +215,10 @@ func setTailscaleApprovedSubnets(subnets []string) {
 func main() {
 
 	rootCmd := &cobra.Command{
-		Use:   "tailscale-route-tiler",
-		Long:  "This is a helper tool to getnerate a list of subnets for tailscale and the run the tailscale command to update the routes",
+		Use: "tailscale-route-tiler",
+		Long: `This is a helper tool to getnerate a list of subnets for tailscale and the run the tailscale 
+		command to update the routes.  
+		`,
 		Short: "A tailscale helper tool for subnets",
 		Run: func(cmd *cobra.Command, args []string) {
 			// This is the default action when no command is provided
@@ -217,6 +229,15 @@ func main() {
 	// Flags
 	var ConfigFile string
 	rootCmd.PersistentFlags().StringVarP(&ConfigFile, "config", "c", "", "Specify the configuration file")
+
+	// version command
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "version",
+		Short: "Print the version number of tailscale-route-tiler",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("tailscale-route-tiler %s, commit %s, built at %s\n", version, commit, date)
+		},
+	})
 
 	// Run Command
 	var testMode bool
