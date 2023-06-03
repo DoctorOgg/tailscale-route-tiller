@@ -71,9 +71,25 @@ func PerformDNSLookups(sites []string) []string {
 	return subnetsList
 }
 
+func unique(slice []string) []string {
+	keys := make(map[string]bool)
+	list := []string{}
+	for _, entry := range slice {
+		if _, value := keys[entry]; !value {
+			keys[entry] = true
+			list = append(list, entry)
+		}
+	}
+	return list
+}
+
 func runUpdates(testMode bool) {
 	resolvedSubnets := PerformDNSLookups(ActiveConfig.Sites)
 	resolvedSubnets = append(resolvedSubnets, ActiveConfig.Subnets...)
+
+	// we might have some overlap, so let's dedupe
+	resolvedSubnets = unique(resolvedSubnets)
+
 	subnetsString := strings.Join(resolvedSubnets, ",")
 	fullCommand := fmt.Sprintf(ActiveConfig.TailscaleCommand, subnetsString)
 	fmt.Println("Tailscale command: ", fullCommand)
