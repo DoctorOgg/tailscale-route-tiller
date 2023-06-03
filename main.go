@@ -27,23 +27,26 @@ type Config struct {
 	TailscaleKey      string   `yaml:"TailscaleKey"`
 }
 
+var ActiveConfig *Config
+
 // ReadYAML reads the YAML configuration file
-func ReadYAML(filename string) (*Config, error) {
+func ReadYAML(filename string) {
 	buf, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return nil, err
+		fmt.Println("Error reading YAML file: ", err)
+		os.Exit(1)
 	}
 
 	c := &Config{}
 	err = yaml.Unmarshal(buf, c)
 	if err != nil {
-		return nil, err
+		fmt.Println("Error reading YAML file: ", err)
+		os.Exit(1)
 	}
-
-	return c, nil
+	ActiveConfig = c
 }
 
-func PerformDNSLookups(sites []string, config *Config) []string {
+func PerformDNSLookups(sites []string) []string {
 	var subnetsList []string
 	for _, site := range sites {
 		ips, err := net.LookupIP(site)
@@ -54,7 +57,7 @@ func PerformDNSLookups(sites []string, config *Config) []string {
 				mask := "/32"
 				if ip.To4() == nil { // it's IPv6
 					mask = "/128"
-					if config.EnableIpv6 {
+					if ActiveConfig.EnableIpv6 {
 						subnetsList = append(subnetsList, ip.String()+mask)
 						fmt.Println("IP addresses for "+site+": ", ip.String()+mask)
 					}
@@ -68,11 +71,11 @@ func PerformDNSLookups(sites []string, config *Config) []string {
 	return subnetsList
 }
 
-func runUpdates(config *Config, testMode bool) {
-	resolvedSubnets := PerformDNSLookups(config.Sites, config)
-	resolvedSubnets = append(resolvedSubnets, config.Subnets...)
+func runUpdates(testMode bool) {
+	resolvedSubnets := PerformDNSLookups(ActiveConfig.Sites)
+	resolvedSubnets = append(resolvedSubnets, ActiveConfig.Subnets...)
 	subnetsString := strings.Join(resolvedSubnets, ",")
-	fullCommand := fmt.Sprintf(config.TailscaleCommand, subnetsString)
+	fullCommand := fmt.Sprintf(ActiveConfig.TailscaleCommand, subnetsString)
 	fmt.Println("Tailscale command: ", fullCommand)
 	if !testMode {
 		commandTokens := strings.Split(fullCommand, " ")
@@ -86,17 +89,16 @@ func runUpdates(config *Config, testMode bool) {
 		}
 		fmt.Println(string(output))
 		fmt.Println("Trying to update Approved Subnets...")
-		setTailscaleApprovedSubnets(config, resolvedSubnets)
+		setTailscaleApprovedSubnets(resolvedSubnets)
 
 	} else {
 		fmt.Println("In test mode, not running command")
 	}
 }
 
-func getTailsScaleClientRouteSettings(config *Config) {
+func getTailsScaleClientRouteSettings() {
 	urlTemplate := "https://api.tailscale.com/api/v2/device/%s/routes"
-	url := fmt.Sprintf(urlTemplate, config.TailscaleclientId)
-	// fmt.Println("Client ID: ", config)
+	url := fmt.Sprintf(urlTemplate, ActiveConfig.TailscaleclientId)
 	fmt.Println("URL:>", url)
 	client := &http.Client{}
 
@@ -106,7 +108,7 @@ func getTailsScaleClientRouteSettings(config *Config) {
 		return
 	}
 
-	req.Header.Set("Authorization", "Bearer "+config.TailscaleKey)
+	req.Header.Set("Authorization", "Bearer "+ActiveConfig.TailscaleKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -135,9 +137,9 @@ func getTailsScaleClientRouteSettings(config *Config) {
 	fmt.Println(string(prettyJSON))
 }
 
-func setTailscaleApprovedSubnets(config *Config, subnets []string) {
+func setTailscaleApprovedSubnets(subnets []string) {
 	urlTemplate := "https://api.tailscale.com/api/v2/device/%s/routes"
-	url := fmt.Sprintf(urlTemplate, config.TailscaleclientId)
+	url := fmt.Sprintf(urlTemplate, ActiveConfig.TailscaleclientId)
 	fmt.Println("URL:>", url)
 
 	// Create payload data
@@ -163,7 +165,7 @@ func setTailscaleApprovedSubnets(config *Config, subnets []string) {
 
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+config.TailscaleKey)
+	req.Header.Set("Authorization", "Bearer "+ActiveConfig.TailscaleKey)
 
 	// Send request
 	resp, err := client.Do(req)
@@ -185,6 +187,7 @@ func setTailscaleApprovedSubnets(config *Config, subnets []string) {
 }
 
 func main() {
+
 	rootCmd := &cobra.Command{
 		Use:   "tailscale-route-tiler",
 		Long:  "This is a helper tool to getnerate a list of subnets for tailscale and the run the tailscale command to update the routes",
@@ -196,42 +199,33 @@ func main() {
 	}
 
 	// Flags
-	var configFile string
+	var ConfigFile string
+	rootCmd.PersistentFlags().StringVarP(&ConfigFile, "config", "c", "", "Specify the configuration file")
+
+	// Run Command
 	var testMode bool
 
 	runCmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run the tailscale command to update the routes",
 		Run: func(cmd *cobra.Command, args []string) {
-			config, err := ReadYAML(configFile)
-			if err != nil {
-				fmt.Println("Error reading YAML file: ", err)
-				os.Exit(1)
-			}
-			runUpdates(config, testMode)
+			ReadYAML(ConfigFile)
+			runUpdates(testMode)
 		},
 	}
 
-	runCmd.Flags().StringVarP(&configFile, "config", "c", "", "Specify the configuration file")
 	runCmd.Flags().BoolVarP(&testMode, "test", "t", false, "Run in test mode")
+	rootCmd.AddCommand(runCmd)
 
+	// Get Client Routes Command
 	getClientRoutes := &cobra.Command{
 		Use:   "get-client-routes",
 		Short: "Get the current routes for the client",
 		Run: func(cmd *cobra.Command, args []string) {
-			config, err := ReadYAML(configFile)
-			if err != nil {
-				fmt.Println("Error reading YAML file: ", err)
-				os.Exit(1)
-			}
-			getTailsScaleClientRouteSettings(config)
+			ReadYAML(ConfigFile)
+			getTailsScaleClientRouteSettings()
 		},
 	}
-
-	getClientRoutes.Flags().StringVarP(&configFile, "config", "c", "", "Specify the configuration file")
-
-	// Add commands to the root command
-	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(getClientRoutes)
 
 	// Execute the CLI
