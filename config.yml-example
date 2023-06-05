@@ -6,7 +6,7 @@ subnets:
   - 10.0.0.0/24
 sites:
   - google.com
-TailscaleCommand: echo %s
+TailscaleCommand: /usr/bin/tailscale up --accept-dns=false --advertise-routes=%s
 EnableIpv6: false
 Slack:
   WebhookURL: https://hooks.slack.com/services/EXAMPLE/EXAMPLE/EXAMPLE
