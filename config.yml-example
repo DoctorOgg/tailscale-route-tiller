@@ -2,7 +2,12 @@ TailscaleclientId: "EXAMPLE-CLIENT-ID"
 TailscaleKey: "DUMMY-KEY"
 subnets:
   - 10.49.0.0/24
+  - 10.0.0.22/32
+  - 10.0.0.0/24
 sites:
   - google.com
-TailscaleCommand: /usr/bin/tailscale up --accept-dns=false --advertise-routes=%s
+TailscaleCommand: echo %s
 EnableIpv6: false
+Slack:
+  WebhookURL: https://hooks.slack.com/services/EXAMPLE/EXAMPLE/EXAMPLE
+  Enabled: true

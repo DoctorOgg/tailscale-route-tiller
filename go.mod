@@ -1,4 +1,4 @@
-module github.com/DoctorOgg/tailscale-route-tiller
+module tailscale-route-tiller
 
 go 1.20
 
