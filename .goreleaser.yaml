@@ -11,7 +11,7 @@ builds:
 nfpms:
   - maintainer: Dr Ogg <ogg@sr375.com
     description: tailscale-route-tiller
-    homepage: https://github.com/caarlos0/tasktimer
+    homepage: https://github.com/DoctorOgg/tailscale-route-tiller/
     license: MIT
     formats:
       - deb
