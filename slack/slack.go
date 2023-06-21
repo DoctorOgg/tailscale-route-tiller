@@ -9,6 +9,7 @@ import (
 )
 
 var WebhookURL string
+var Enabled bool = false
 
 type SlackBlock struct {
 	Type string `json:"type"`
@@ -23,6 +24,10 @@ type SlackMessage struct {
 }
 
 func PostRouteUpdate(subnets []string, nodeID string) {
+
+	if !Enabled {
+		return
+	}
 
 	message := SlackMessage{
 		Blocks: []SlackBlock{
@@ -64,6 +69,10 @@ func PostRouteUpdate(subnets []string, nodeID string) {
 }
 
 func PostError(err error) {
+
+	if !Enabled {
+		return
+	}
 
 	message := SlackMessage{
 		Blocks: []SlackBlock{

@@ -1,20 +1,16 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"strings"
-
+	"tailscale-route-tiller/config"
 	"tailscale-route-tiller/slack"
+	"tailscale-route-tiller/tailscale"
+	"tailscale-route-tiller/utils"
 
 	"github.com/spf13/cobra"
-	yaml "gopkg.in/yaml.v2"
 )
 
 var subnets []string
@@ -25,104 +21,23 @@ var (
 	date    = "unknown"
 )
 
-type Slack struct {
-	WebhookURL string `yaml:"WebhookURL"`
-	Enabled    bool   `yaml:"Enabled"`
-}
+func runUpdates(testMode bool, config config.Config) {
 
-// Config is a struct for our YAML data
-type Config struct {
-	Subnets           []string `yaml:"subnets"`
-	Sites             []string `yaml:"sites"`
-	TailscaleCommand  string   `yaml:"TailscaleCommand"`
-	EnableIpv6        bool     `yaml:"EnableIpv6"`
-	TailscaleclientId string   `yaml:"TailscaleclientId"`
-	TailscaleKey      string   `yaml:"TailscaleKey"`
-	Slack             Slack    `yaml:"Slack"`
-}
-
-type IPSubnet struct {
-	Network net.IPNet
-}
-
-var ActiveConfig *Config
-
-// ReadYAML reads the YAML configuration file
-func ReadYAML(filename string) {
-	buf, err := ioutil.ReadFile(filename)
+	resolvedSubnets, err := utils.PerformDNSLookups(config.Sites, config.EnableIpv6)
 	if err != nil {
-		fmt.Println("Error reading YAML file: ", err)
-		if ActiveConfig.Slack.Enabled {
-			slack.WebhookURL = ActiveConfig.Slack.WebhookURL
-			slack.PostError(err)
-		}
+		fmt.Println("Error: ", err.Error())
+		slack.PostError(err)
 		os.Exit(1)
 	}
 
-	c := &Config{}
-	err = yaml.Unmarshal(buf, c)
-	if err != nil {
-		fmt.Println("Error reading YAML file: ", err)
-		if ActiveConfig.Slack.Enabled {
-			slack.WebhookURL = ActiveConfig.Slack.WebhookURL
-			slack.PostError(err)
-		}
-		os.Exit(1)
-	}
-	ActiveConfig = c
-}
-
-func PerformDNSLookups(sites []string) []string {
-	var subnetsList []string
-	for _, site := range sites {
-		ips, err := net.LookupIP(site)
-		if err != nil {
-			fmt.Println("Error: ", site, err.Error())
-			if ActiveConfig.Slack.Enabled {
-				slack.WebhookURL = ActiveConfig.Slack.WebhookURL
-				slack.PostError(err)
-			}
-
-		} else {
-			for _, ip := range ips {
-				mask := "/32"
-				if ip.To4() == nil { // it's IPv6
-					mask = "/128"
-					if ActiveConfig.EnableIpv6 {
-						subnetsList = append(subnetsList, ip.String()+mask)
-						fmt.Println("IP addresses for "+site+": ", ip.String()+mask)
-					}
-				} else {
-					subnetsList = append(subnetsList, ip.String()+mask)
-					fmt.Println("IP addresses for "+site+": ", ip.String()+mask)
-				}
-			}
-		}
-	}
-	return subnetsList
-}
-
-func unique(slice []string) []string {
-	keys := make(map[string]bool)
-	list := []string{}
-	for _, entry := range slice {
-		if _, value := keys[entry]; !value {
-			keys[entry] = true
-			list = append(list, entry)
-		}
-	}
-	return list
-}
-
-func runUpdates(testMode bool) {
-	resolvedSubnets := PerformDNSLookups(ActiveConfig.Sites)
-	resolvedSubnets = append(resolvedSubnets, ActiveConfig.Subnets...)
+	resolvedSubnets = append(resolvedSubnets, config.Subnets...)
 
 	// we might have some overlap, so let's dedupe
-	resolvedSubnets = unique(resolvedSubnets)
+	resolvedSubnets = utils.Unique(resolvedSubnets)
 
 	subnetsString := strings.Join(resolvedSubnets, ",")
-	fullCommand := fmt.Sprintf(ActiveConfig.TailscaleCommand, subnetsString)
+
+	fullCommand := fmt.Sprintf(config.TailscaleCommand, subnetsString)
 	fmt.Println("Tailscale command: ", fullCommand)
 	if !testMode {
 		commandTokens := strings.Split(fullCommand, " ")
@@ -132,150 +47,47 @@ func runUpdates(testMode bool) {
 
 		if err != nil {
 			fmt.Printf("Failed to run command: %v\n", err)
-			if ActiveConfig.Slack.Enabled {
-				slack.WebhookURL = ActiveConfig.Slack.WebhookURL
-				slack.PostError(err)
-			}
+			slack.PostError(err)
 			os.Exit(1)
 		}
+
 		fmt.Println(string(output))
 		fmt.Println("Trying to update Approved Subnets...")
-		setTailscaleApprovedSubnets(resolvedSubnets)
-		if ActiveConfig.Slack.Enabled {
-			slack.WebhookURL = ActiveConfig.Slack.WebhookURL
-			slack.PostRouteUpdate(resolvedSubnets, ActiveConfig.TailscaleclientId)
+
+		err = tailscale.SetTailscaleApprovedSubnets(resolvedSubnets)
+		if err != nil {
+			fmt.Println("Error: ", err.Error())
+			slack.PostError(err)
+			os.Exit(1)
 		}
 
+		slack.PostRouteUpdate(resolvedSubnets, config.TailscaleclientId)
+
 	} else {
-		if ActiveConfig.Slack.Enabled {
-			slack.WebhookURL = ActiveConfig.Slack.WebhookURL
-			slack.PostRouteUpdate(resolvedSubnets, ActiveConfig.TailscaleclientId)
-		}
+		slack.PostRouteUpdate(resolvedSubnets, config.TailscaleclientId)
 		fmt.Println("In test mode, not running command")
 
 	}
 }
 
-func getTailsScaleClientRouteSettings() {
-	urlTemplate := "https://api.tailscale.com/api/v2/device/%s/routes"
-	url := fmt.Sprintf(urlTemplate, ActiveConfig.TailscaleclientId)
-	fmt.Println("URL:>", url)
-	client := &http.Client{}
+func runGetTailsScaleClientRouteSettings(config config.Config) {
 
-	req, err := http.NewRequest("GET", url, nil)
+	output, err := tailscale.GetTailsScaleClientRouteSettings()
 	if err != nil {
-		fmt.Println("Error creating request:", err)
-		if ActiveConfig.Slack.Enabled {
-			slack.WebhookURL = ActiveConfig.Slack.WebhookURL
-			slack.PostError(err)
-		}
-		return
+		fmt.Println("Error: ", err.Error())
+		slack.PostError(err)
+		os.Exit(1)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+ActiveConfig.TailscaleKey)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Println("Error sending request:", err)
-		if ActiveConfig.Slack.Enabled {
-			slack.WebhookURL = ActiveConfig.Slack.WebhookURL
-			slack.PostError(err)
-		}
-		return
-	}
-	defer resp.Body.Close()
-
-	// Read the response body
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Println("Error reading response body:", err)
-		if ActiveConfig.Slack.Enabled {
-			slack.WebhookURL = ActiveConfig.Slack.WebhookURL
-			slack.PostError(err)
-		}
-		return
-	}
-
-	rawMessage := json.RawMessage(body)
-
-	// Marshal the raw message with indentation
-	prettyJSON, err := json.MarshalIndent(rawMessage, "", "  ")
-	if err != nil {
-		fmt.Println("Error encoding JSON:", err)
-		if ActiveConfig.Slack.Enabled {
-			slack.WebhookURL = ActiveConfig.Slack.WebhookURL
-			slack.PostError(err)
-		}
-		return
-	}
-
-	// Print the pretty JSON
-	fmt.Println(string(prettyJSON))
+	fmt.Println(string(output))
 }
 
-func setTailscaleApprovedSubnets(subnets []string) {
-	urlTemplate := "https://api.tailscale.com/api/v2/device/%s/routes"
-	url := fmt.Sprintf(urlTemplate, ActiveConfig.TailscaleclientId)
-	fmt.Println("URL:>", url)
-
-	// Create payload data
-	payload := struct {
-		Routes []string `json:"routes"`
-	}{
-		Routes: subnets,
-	}
-
-	client := &http.Client{}
-
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		fmt.Println("Error encoding JSON payload:", err)
-		if ActiveConfig.Slack.Enabled {
-			slack.WebhookURL = ActiveConfig.Slack.WebhookURL
-			slack.PostError(err)
-		}
-		return
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		fmt.Println("Error creating request:", err)
-		if ActiveConfig.Slack.Enabled {
-			slack.WebhookURL = ActiveConfig.Slack.WebhookURL
-			slack.PostError(err)
-		}
-		return
-	}
-
-	// Set headers
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+ActiveConfig.TailscaleKey)
-
-	// Send request
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Println("Error sending request:", err)
-		if ActiveConfig.Slack.Enabled {
-			slack.WebhookURL = ActiveConfig.Slack.WebhookURL
-			slack.PostError(err)
-		}
-		return
-	}
-	defer resp.Body.Close()
-
-	// Read response body
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Println("Error reading response body:", err)
-		fmt.Println("Response:", string(body))
-		if ActiveConfig.Slack.Enabled {
-			slack.WebhookURL = ActiveConfig.Slack.WebhookURL
-			slack.PostError(err)
-		}
-
-		return
-	}
-
+func initConfig(configFile string) {
+	config.ReadYAML(configFile)
+	slack.WebhookURL = config.ActiveConfig.Slack.WebhookURL
+	slack.Enabled = config.ActiveConfig.Slack.Enabled
+	tailscale.TailscaleKey = config.ActiveConfig.TailscaleKey
+	tailscale.TailScaleClientId = config.ActiveConfig.TailscaleclientId
 }
 
 func main() {
@@ -312,8 +124,8 @@ func main() {
 		Use:   "run",
 		Short: "Run the tailscale command to update the routes",
 		Run: func(cmd *cobra.Command, args []string) {
-			ReadYAML(ConfigFile)
-			runUpdates(testMode)
+			initConfig(ConfigFile)
+			runUpdates(testMode, *config.ActiveConfig)
 		},
 	}
 
@@ -325,8 +137,8 @@ func main() {
 		Use:   "get-client-routes",
 		Short: "Get the current routes for the client",
 		Run: func(cmd *cobra.Command, args []string) {
-			ReadYAML(ConfigFile)
-			getTailsScaleClientRouteSettings()
+			initConfig(ConfigFile)
+			runGetTailsScaleClientRouteSettings(*config.ActiveConfig)
 		},
 	}
 	rootCmd.AddCommand(getClientRoutes)
