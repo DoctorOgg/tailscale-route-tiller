@@ -23,7 +23,7 @@ var (
 
 func runUpdates(testMode bool, config config.Config) {
 
-	resolvedSubnets, err := utils.PerformDNSLookups(config.Sites, config.EnableIpv6)
+	resolvedSubnets, _, err := utils.PerformDNSLookups(config.Sites, config.EnableIpv6)
 	if err != nil {
 		fmt.Println("Error: ", err.Error())
 		slack.PostError(err)
