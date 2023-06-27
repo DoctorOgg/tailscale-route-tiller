@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"tailscale-route-tiller/config"
 	"tailscale-route-tiller/slack"
@@ -99,7 +100,9 @@ func runUpdates(done chan bool, testMode bool, config config.Config) {
 				currentSubnets = resolvedSubnets
 				firstRun = false
 
-				fullCommand := fmt.Sprintf(config.TailscaleCommand, currentSubnets)
+				subnetsString := strings.Join(currentSubnets, ",")
+
+				fullCommand := fmt.Sprintf(config.TailscaleCommand, subnetsString)
 				output := utils.RunShellCommand(fullCommand, testMode)
 				fmt.Println(string(output))
 				err = tailscale.SetTailscaleApprovedSubnets(resolvedSubnets)
@@ -114,8 +117,8 @@ func runUpdates(done chan bool, testMode bool, config config.Config) {
 				fmt.Println("No changes detected, moving along...")
 			} else {
 				fmt.Println("Changes detected, updating...")
-
-				fullCommand := fmt.Sprintf(config.TailscaleCommand, currentSubnets)
+				subnetsString := strings.Join(currentSubnets, ",")
+				fullCommand := fmt.Sprintf(config.TailscaleCommand, subnetsString)
 				output := utils.RunShellCommand(fullCommand, testMode)
 				fmt.Println(string(output))
 				err = tailscale.SetTailscaleApprovedSubnets(resolvedSubnets)
