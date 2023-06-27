@@ -23,6 +23,17 @@ type SlackMessage struct {
 	Blocks []SlackBlock `json:"blocks"`
 }
 
+// post the message to slack
+func sendit(payload []byte) {
+	resp, err := http.Post(WebhookURL, "application/json", bytes.NewBuffer(payload))
+	if err != nil {
+		log.Fatal("Error sending Slack message:", err)
+	}
+	defer resp.Body.Close()
+
+	log.Println("Slack message sent successfully!")
+}
+
 func PostRouteUpdate(subnets []string, nodeID string) {
 
 	if !Enabled {
@@ -59,13 +70,7 @@ func PostRouteUpdate(subnets []string, nodeID string) {
 		log.Fatal("Error marshaling Slack message:", err)
 	}
 
-	resp, err := http.Post(WebhookURL, "application/json", bytes.NewBuffer(payload))
-	if err != nil {
-		log.Fatal("Error sending Slack message:", err)
-	}
-	defer resp.Body.Close()
-
-	log.Println("Slack message sent successfully!")
+	sendit(payload)
 }
 
 func PostError(err error) {
@@ -94,11 +99,55 @@ func PostError(err error) {
 		log.Fatal("Error marshaling Slack message:", err)
 	}
 
-	resp, err := http.Post(WebhookURL, "application/json", bytes.NewBuffer(payload))
-	if err != nil {
-		log.Fatal("Error sending Slack message:", err)
-	}
-	defer resp.Body.Close()
+	sendit(payload)
 
-	log.Println("Slack message sent successfully!")
+}
+
+func PostDiffUpdate(added []string, removed []string, nodeID string) {
+
+	if !Enabled {
+		return
+	}
+
+	message := SlackMessage{
+		Blocks: []SlackBlock{
+			{
+				Type: "section",
+				Text: struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				}{
+					Type: "mrkdwn",
+					Text: "*Updating Advertised routes for Node ID:* " + nodeID,
+				},
+			},
+			{
+				Type: "section",
+				Text: struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				}{
+					Type: "mrkdwn",
+					Text: "*Added:*\n" + strings.Join(added, ", "),
+				},
+			},
+			{
+				Type: "section",
+				Text: struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				}{
+					Type: "mrkdwn",
+					Text: "*Removed:*\n" + strings.Join(removed, ", "),
+				},
+			},
+		},
+	}
+
+	payload, err := json.Marshal(message)
+	if err != nil {
+		log.Fatal("Error marshaling Slack message:", err)
+	}
+
+	sendit(payload)
 }

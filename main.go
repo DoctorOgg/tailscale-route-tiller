@@ -3,12 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"tailscale-route-tiller/config"
 	"tailscale-route-tiller/slack"
 	"tailscale-route-tiller/tailscale"
 	"tailscale-route-tiller/utils"
+	"tailscale-route-tiller/worker"
 
 	"github.com/spf13/cobra"
 )
@@ -38,20 +38,10 @@ func runUpdates(testMode bool, config config.Config) {
 	subnetsString := strings.Join(resolvedSubnets, ",")
 
 	fullCommand := fmt.Sprintf(config.TailscaleCommand, subnetsString)
-	fmt.Println("Tailscale command: ", fullCommand)
+
 	if !testMode {
-		commandTokens := strings.Split(fullCommand, " ")
-		cmd := exec.Command(commandTokens[0], commandTokens[1:]...)
-		output, err := cmd.Output()
-		fmt.Println(string(output))
-
-		if err != nil {
-			fmt.Printf("Failed to run command: %v\n", err)
-			slack.PostError(err)
-			os.Exit(1)
-		}
-
-		fmt.Println(string(output))
+		output := utils.RunShellCommand(fullCommand, testMode)
+		fmt.Println(output)
 		fmt.Println("Trying to update Approved Subnets...")
 
 		err = tailscale.SetTailscaleApprovedSubnets(resolvedSubnets)
@@ -131,6 +121,19 @@ func main() {
 
 	runCmd.Flags().BoolVarP(&testMode, "test", "t", false, "Run in test mode")
 	rootCmd.AddCommand(runCmd)
+
+	// worker Command
+	workerCmd := &cobra.Command{
+		Use:   "worker",
+		Short: "Run in worker mode, will run periodically, based on the lowest record TTL",
+		Run: func(cmd *cobra.Command, args []string) {
+			initConfig(ConfigFile)
+			worker.Run(testMode, *config.ActiveConfig)
+		},
+	}
+
+	workerCmd.Flags().BoolVarP(&testMode, "test", "t", false, "Run in test mode")
+	rootCmd.AddCommand(workerCmd)
 
 	// Get Client Routes Command
 	getClientRoutes := &cobra.Command{

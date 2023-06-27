@@ -5,18 +5,23 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"tailscale-route-tiller/config"
+	"tailscale-route-tiller/slack"
+	"tailscale-route-tiller/tailscale"
+	"tailscale-route-tiller/utils"
 	"time"
 )
-
-
 
 type IPWithTTL struct {
 	IP  string
 	TTL time.Duration
 }
 
-Interval := 60 * time.Second
-currentSubnets := []string{}
+var interval time.Duration = 1 * time.Second
+var currentSubnets []string
+var firstRun bool = true
+var TestMode bool = false
+var Command string
 
 func getAddedElements(current, newArray []string) []string {
 	// Create a map to store the elements of the current array
@@ -41,16 +46,15 @@ func getRemovedElements(current, newArray []string) []string {
 	return getAddedElements(newArray, current)
 }
 
-
-func run() {
+func Run(testMode bool, config config.Config) {
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, os.Kill)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	// Create a channel to control the main loop
 	done := make(chan bool)
 
-	// Start the goroutine outside the main function
-	go runUpdates(done)
+	// Start the goroutine
+	go runUpdates(done, testMode, config)
 
 	// Wait for termination signals
 	<-sigChan
@@ -62,63 +66,42 @@ func run() {
 
 }
 
-func runUpdates(done <-chan bool) {
+func runUpdates(done chan bool, testMode bool, config config.Config) {
+	sleepChan := time.After(interval) // Start initial sleep duration
+
 	for {
 		select {
 		case <-done:
+			done <- true // Signal completion to the main function
 			return
-		default:
-			// Ok lets do some work
+		case <-sleepChan:
+			// Perform updates
 			resolvedSubnets, lowestTTL, err := utils.PerformDNSLookups(config.Sites, config.EnableIpv6)
 			if err != nil {
 				fmt.Println("Error: ", err.Error())
 				slack.PostError(err)
-				os.Exit(1)
 			}
 
-			// set the Interval to the lowest TTL unless lower than 60
+			// Set the Interval to the lowest TTL unless lower than 60
 			if lowestTTL > 60 {
-				Interval = lowestTTL * time.Second
+				interval = time.Duration(lowestTTL) * time.Second
 			} else {
-				Interval = 60 * time.Second
+				interval = 60 * time.Second
 			}
+			fmt.Println("New Interval: ", interval)
 
-		
+			// Get the final list of subnets to approve
 			resolvedSubnets = append(resolvedSubnets, config.Subnets...)
 			resolvedSubnets = utils.Unique(resolvedSubnets)
 
+			// Cases to handle: first run, no changes, changes
+			if firstRun {
+				currentSubnets = resolvedSubnets
+				firstRun = false
 
-			added := getAddedElements(currentSubnets, resolvedSubnets)
-			removed := getRemovedElements(currentSubnets, resolvedSubnets)
-
-			currentSubnets = resolvedSubnets
-
-			if len(added) > 0 && len(removed) > 0 {
-				fmt.Println("Added: ", added)
-				fmt.Println("Removed: ", removed)
-				slack.PostRouteUpdate(resolvedSubnets, config.TailscaleclientId)
-			
-				subnetsString := strings.Join(resolvedSubnets, ",")
-
-				fullCommand := fmt.Sprintf(config.TailscaleCommand, subnetsString)
-
-				fmt.Println("Tailscale command: ", fullCommand)
-
-			if !testMode {
-				commandTokens := strings.Split(fullCommand, " ")
-				cmd := exec.Command(commandTokens[0], commandTokens[1:]...)
-				output, err := cmd.Output()
+				fullCommand := fmt.Sprintf(config.TailscaleCommand, currentSubnets)
+				output := utils.RunShellCommand(fullCommand, testMode)
 				fmt.Println(string(output))
-
-				if err != nil {
-					fmt.Printf("Failed to run command: %v\n", err)
-					slack.PostError(err)
-					os.Exit(1)
-				}
-
-				fmt.Println(string(output))
-				fmt.Println("Trying to update Approved Subnets...")
-
 				err = tailscale.SetTailscaleApprovedSubnets(resolvedSubnets)
 				if err != nil {
 					fmt.Println("Error: ", err.Error())
@@ -127,18 +110,28 @@ func runUpdates(done <-chan bool) {
 				}
 
 				slack.PostRouteUpdate(resolvedSubnets, config.TailscaleclientId)
-
+			} else if len(resolvedSubnets) == len(currentSubnets) {
+				fmt.Println("No changes detected, moving along...")
 			} else {
-				slack.PostRouteUpdate(resolvedSubnets, config.TailscaleclientId)
-				fmt.Println("In test mode, not running command")
+				fmt.Println("Changes detected, updating...")
+
+				fullCommand := fmt.Sprintf(config.TailscaleCommand, currentSubnets)
+				output := utils.RunShellCommand(fullCommand, testMode)
+				fmt.Println(string(output))
+				err = tailscale.SetTailscaleApprovedSubnets(resolvedSubnets)
+				if err != nil {
+					fmt.Println("Error: ", err.Error())
+					slack.PostError(err)
+					os.Exit(1)
+				}
+
+				added := getAddedElements(currentSubnets, resolvedSubnets)
+				removed := getRemovedElements(currentSubnets, resolvedSubnets)
+				currentSubnets = resolvedSubnets
+				slack.PostDiffUpdate(added, removed, config.TailscaleclientId)
 			}
-		} else {
-			fmt.Println("No changes detected, skipping tailscale command")
-		}
-			// Sleep for the lowest TTL unless less than 60 	
-			time.Sleep(Interval)
+
+			sleepChan = time.After(interval) // Reset sleep duration
 		}
 	}
 }
-
-
