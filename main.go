@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"tailscale-route-tiller/config"
@@ -25,7 +26,7 @@ func runUpdates(testMode bool, config config.Config) {
 
 	resolvedSubnets, _, err := utils.PerformDNSLookups(config.Sites, config.EnableIpv6)
 	if err != nil {
-		fmt.Println("Error: ", err.Error())
+		log.Println("Error: ", err.Error())
 		slack.PostError(err)
 		os.Exit(1)
 	}
@@ -41,12 +42,12 @@ func runUpdates(testMode bool, config config.Config) {
 
 	if !testMode {
 		output := utils.RunShellCommand(fullCommand, testMode)
-		fmt.Println(output)
-		fmt.Println("Trying to update Approved Subnets...")
+		log.Println(output)
+		log.Println("Trying to update Approved Subnets...")
 
 		err = tailscale.SetTailscaleApprovedSubnets(resolvedSubnets)
 		if err != nil {
-			fmt.Println("Error: ", err.Error())
+			log.Println("Error: ", err.Error())
 			slack.PostError(err)
 			os.Exit(1)
 		}
@@ -55,7 +56,7 @@ func runUpdates(testMode bool, config config.Config) {
 
 	} else {
 		slack.PostRouteUpdate(resolvedSubnets, config.TailscaleclientId)
-		fmt.Println("In test mode, not running command")
+		log.Println("In test mode, not running command")
 
 	}
 }
@@ -64,12 +65,12 @@ func runGetTailsScaleClientRouteSettings(config config.Config) {
 
 	output, err := tailscale.GetTailsScaleClientRouteSettings()
 	if err != nil {
-		fmt.Println("Error: ", err.Error())
+		log.Println("Error: ", err.Error())
 		slack.PostError(err)
 		os.Exit(1)
 	}
 
-	fmt.Println(string(output))
+	log.Println(string(output))
 }
 
 func initConfig(configFile string) {
@@ -81,6 +82,7 @@ func initConfig(configFile string) {
 }
 
 func main() {
+	log.Println("Starting tailscale-route-tiler", "version", version, "commit", commit, "date", date)
 
 	rootCmd := &cobra.Command{
 		Use: "tailscale-route-tiler",
@@ -148,7 +150,7 @@ func main() {
 
 	// Execute the CLI
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		os.Exit(1)
 	}
 }

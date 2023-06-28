@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -80,7 +81,7 @@ func PerformDNSLookups(sites []string, enableIPv6 bool) ([]string, int, error) {
 
 		results, err := lookupIPsWithTTL(site, false)
 		if err != nil {
-			fmt.Println("Error: ", site, err.Error())
+			log.Println("Error: ", site, err.Error())
 			return nil, lowestTTL, err
 		}
 
@@ -100,7 +101,7 @@ func PerformDNSLookups(sites []string, enableIPv6 bool) ([]string, int, error) {
 
 			results, err := lookupIPsWithTTL(site, true)
 			if err != nil {
-				fmt.Println("Error: ", site, err.Error())
+				log.Println("Error: ", site, err.Error())
 				return nil, lowestTTL, err
 			}
 
@@ -125,14 +126,14 @@ func PerformDNSLookups(sites []string, enableIPv6 bool) ([]string, int, error) {
 }
 
 func RunShellCommand(command string, testMode bool) string {
-	fmt.Println("command: ", command)
+	log.Println("command: ", command)
 	if !testMode {
 		commandTokens := strings.Split(command, " ")
 		cmd := exec.Command(commandTokens[0], commandTokens[1:]...)
 		output, err := cmd.Output()
 
 		if err != nil {
-			fmt.Printf("Failed to run command: %v\n", err)
+			log.Printf("Failed to run command: %v\n", err)
 			os.Exit(1)
 		}
 		return string(output)
