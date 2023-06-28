@@ -119,7 +119,8 @@ func runUpdates(done chan bool, testMode bool, config config.Config) {
 				log.Println("No changes detected, moving along, New Interval: " + interval.String())
 			} else {
 				log.Println("Changes detected, updating, New Interval: " + interval.String())
-				subnetsString := strings.Join(currentSubnets, ",")
+
+				subnetsString := strings.Join(resolvedSubnets, ",")
 				fullCommand := fmt.Sprintf(config.TailscaleCommand, subnetsString)
 				output := utils.RunShellCommand(fullCommand, testMode)
 				fmt.Println(string(output))
