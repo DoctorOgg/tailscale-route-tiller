@@ -115,15 +115,19 @@ func runUpdates(done chan bool, testMode bool, config config.Config) {
 				}
 
 				slack.PostRouteUpdate(resolvedSubnets, config.TailscaleclientId)
+
 			} else if len(resolvedSubnets) == len(currentSubnets) {
+
 				log.Println("No changes detected, moving along, New Interval: " + interval.String())
+
 			} else {
 				log.Println("Changes detected, updating, New Interval: " + interval.String())
 
 				subnetsString := strings.Join(resolvedSubnets, ",")
+
 				fullCommand := fmt.Sprintf(config.TailscaleCommand, subnetsString)
 				output := utils.RunShellCommand(fullCommand, testMode)
-				fmt.Println(string(output))
+				log.Println(string(output))
 				err = tailscale.SetTailscaleApprovedSubnets(resolvedSubnets)
 				if err != nil {
 					log.Println("Error: ", err.Error())
@@ -131,13 +135,8 @@ func runUpdates(done chan bool, testMode bool, config config.Config) {
 					os.Exit(1)
 				}
 
-				added := getAddedElements(currentSubnets, resolvedSubnets)
-				removed := getRemovedElements(currentSubnets, resolvedSubnets)
-				currentSubnets = resolvedSubnets
-				slack.PostDiffUpdate(added, removed, config.TailscaleclientId)
+				sleepChan = time.After(interval) // Reset sleep duration
 			}
-
-			sleepChan = time.After(interval) // Reset sleep duration
 		}
 	}
 }
