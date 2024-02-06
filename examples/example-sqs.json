@@ -1,0 +1,105 @@
+{
+  "version": "0",
+  "id": "xxxxxxxxx-dd17-e765-4df0-xxxxxxxxxx",
+  "detail-type": "AWS API Call via CloudTrail",
+  "source": "aws.ec2",
+  "account": "xxxxxxxxxxx",
+  "time": "2024-02-02T06:34:30Z",
+  "region": "us-west-2",
+  "resources": [],
+  "detail": {
+    "eventVersion": "1.09",
+    "userIdentity": {
+      "type": "AssumedRole",
+      "principalId": "xxxxxxxx:ElasticLoadBalancing",
+      "arn": "arn:aws:sts::xxxxxxx:assumed-role/AWSServiceRoleForElasticLoadBalancing/ElasticLoadBalancing",
+      "accountId": "xxxxxxx",
+      "sessionContext": {
+        "sessionIssuer": {
+          "type": "Role",
+          "principalId": "xxxxxxxxxx",
+          "arn": "arn:aws:iam::xxxxxxx:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing",
+          "accountId": "xxxxxxxxx",
+          "userName": "AWSServiceRoleForElasticLoadBalancing"
+        },
+        "attributes": {
+          "creationDate": "2024-02-02T06:34:30Z",
+          "mfaAuthenticated": "false"
+        }
+      },
+      "invokedBy": "elasticloadbalancing.amazonaws.com"
+    },
+    "eventTime": "2024-02-02T06:34:30Z",
+    "eventSource": "ec2.amazonaws.com",
+    "eventName": "CreateNetworkInterface",
+    "awsRegion": "us-west-2",
+    "sourceIPAddress": "elasticloadbalancing.amazonaws.com",
+    "userAgent": "elasticloadbalancing.amazonaws.com",
+    "requestParameters": {
+      "subnetId": "subnet-xxxxxxx",
+      "description": "ELB app/xxxxxx/xxxxxxxx",
+      "groupSet": {
+        "items": [
+          {
+            "groupId": "sg-xxxxxxxx"
+          },
+          {
+            "groupId": "sg-xxxxxxx"
+          }
+        ]
+      },
+      "privateIpAddressesSet": {},
+      "ipv6AddressCount": 0,
+      "clientToken": "xxxxx-b2xxxxb5-xxx-ae66-xxxxx"
+    },
+    "responseElements": {
+      "requestId": "xxxxxxx-ca5a-4526-96ca-xxxxxxxx",
+      "networkInterface": {
+        "networkInterfaceId": "eni-xxxxxxxxxx",
+        "subnetId": "subnet-xxxxxxx",
+        "vpcId": "vpc-xxxxxxxx",
+        "availabilityZone": "us-west-2b",
+        "description": "ELB app/xxxxxxx/cxxxxxxxxxxxx2",
+        "ownerId": "xxxxxxxxxx",
+        "requesterId": "amazon-elb",
+        "requesterManaged": true,
+        "status": "pending",
+        "macAddress": "xx:xx:xx:5a:78:77",
+        "privateIpAddress": "10.49.61.187",
+        "privateDnsName": "ixxxxxxxxx.us-west-2.compute.internal",
+        "sourceDestCheck": true,
+        "interfaceType": "interface",
+        "groupSet": {
+          "items": [
+            {
+              "groupId": "sg-xxxxxxxx",
+              "groupName": "default"
+            },
+            {
+              "groupId": "sg-xxxxxxx",
+              "groupName": "xxxxxx-alb"
+            }
+          ]
+        },
+        "privateIpAddressesSet": {
+          "item": [
+            {
+              "privateIpAddress": "10.49.61.0",
+              "privateDnsName": "xxxxxxxxxxx.us-west-2.compute.internal",
+              "primary": true
+            }
+          ]
+        },
+        "ipv6AddressesSet": {},
+        "tagSet": {}
+      }
+    },
+    "requestID": "xxxxxxx-ca5a-4526-96ca-xxxxxxxxx",
+    "eventID": "xxxxxxxx-0270-4b29-8130-xxxxxxxx",
+    "readOnly": false,
+    "eventType": "AwsApiCall",
+    "managementEvent": true,
+    "recipientAccountId": "xxxxxxxxx",
+    "eventCategory": "Management"
+  }
+}

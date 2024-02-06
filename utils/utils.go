@@ -70,7 +70,7 @@ func lookupIPsWithTTL(host string, enableIpv6 bool) ([]IPWithTTL, error) {
 	return results, nil
 }
 
-func PerformDNSLookups(sites []string, enableIPv6 bool) ([]string, int, error) {
+func PerformDNSLookupsWithTTL(sites []string, enableIPv6 bool) ([]string, int, error) {
 
 	var subnetsList []string
 	var lowestTTL int = 60

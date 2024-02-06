@@ -1,0 +1,27 @@
+{
+  "source": [
+    "aws.ec2"
+  ],
+  "detail-type": [
+    "AWS API Call via CloudTrail"
+  ],
+  "detail": {
+    "sourceIPAddress": [
+      "elasticloadbalancing.amazonaws.com"
+    ],
+    "eventName": [
+      "CreateNetworkInterface",
+      "DeleteNetworkInterface"
+    ],
+    "requestParameters": {
+      "description": [
+        {
+          "prefix": "ELB app/xxxxxxxx/xxxxxxx"
+        },
+        {
+          "prefix": "ELB app/xxxxxxx/xxxxxx"
+        }
+      ]
+    }
+  }
+}

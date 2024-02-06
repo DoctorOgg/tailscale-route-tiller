@@ -11,3 +11,6 @@ EnableIpv6: false
 Slack:
   WebhookURL: https://hooks.slack.com/services/EXAMPLE/EXAMPLE/EXAMPLE
   Enabled: true
+SQS:
+  QueueURL: https://sqs.us-west-2.amazonaws.com/EXAMPLE/EXAMPLE
+  Region: us-west-2
