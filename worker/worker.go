@@ -1,142 +1,134 @@
 package worker
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"tailscale-route-tiller/config"
 	"tailscale-route-tiller/slack"
 	"tailscale-route-tiller/tailscale"
 	"tailscale-route-tiller/utils"
-	"time"
+
+	"tailscale-route-tiller/cloudwatchevent"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sqs"
 )
 
-type IPWithTTL struct {
-	IP  string
-	TTL time.Duration
-}
-
-var interval time.Duration = 1 * time.Second
-var currentSubnets []string
-var firstRun bool = true
 var TestMode bool = false
 var Command string
 
-func getAddedElements(current, newArray []string) []string {
-	// Create a map to store the elements of the current array
-	currentMap := make(map[string]bool)
-	for _, item := range current {
-		currentMap[item] = true
+func parseCloudWatchEvent(message *sqs.Message) (*cloudwatchevent.CloudTrailEvent, error) {
+	var event cloudwatchevent.CloudTrailEvent
+	err := json.Unmarshal([]byte(*message.Body), &event)
+	if err != nil {
+		return nil, err
 	}
-
-	// Iterate over the new array and check for elements not present in the current array
-	var added []string
-	for _, item := range newArray {
-		if !currentMap[item] {
-			added = append(added, item)
-		}
-	}
-
-	return added
-}
-
-func getRemovedElements(current, newArray []string) []string {
-	// Use the getAddedElements function by swapping the arrays
-	return getAddedElements(newArray, current)
+	return &event, nil
 }
 
 func Run(testMode bool, config config.Config) {
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	// Initialize a session in us-west-2 region that the SDK will use to load credentials
+	sess, err := session.NewSession(&aws.Config{
+		Region: aws.String("us-west-2")},
+	)
 
-	// Create a channel to control the main loop
-	done := make(chan bool)
+	if err != nil {
+		log.Fatalf("failed to create session, %v", err)
+	}
 
-	// Start the goroutine
-	go runUpdates(done, testMode, config)
-
-	// Wait for termination signals
-	<-sigChan
-
-	// Signal the main loop to stop
-	done <- true
-
-	log.Println("Program terminated")
-
-}
-
-func runUpdates(done chan bool, testMode bool, config config.Config) {
-	sleepChan := time.After(interval) // Start initial sleep duration
+	// Create a SQS service client
+	svc := sqs.New(sess)
 
 	for {
-		select {
-		case <-done:
-			done <- true // Signal completion to the main function
-			return
-		case <-sleepChan:
-			// Perform updates
-			resolvedSubnets, lowestTTL, err := utils.PerformDNSLookups(config.Sites, config.EnableIpv6)
+		// Receive a message from the SQS queue
+		result, err := svc.ReceiveMessage(&sqs.ReceiveMessageInput{
+			QueueUrl:            &config.SQS.QueueURL,
+			MaxNumberOfMessages: aws.Int64(1),
+			WaitTimeSeconds:     aws.Int64(20), // Use long polling
+		})
+
+		if err != nil {
+			log.Fatalf("Unable to receive message from queue %q, %v.", config.SQS.QueueURL, err)
+		}
+
+		if len(result.Messages) > 0 {
+			// Call a function to process the message here
+			// processMessage(result.Messages[0])
+
+			message := result.Messages[0]
+
+			if testMode {
+				log.Println("Test mode enabled. Message: ", *message.Body)
+			}
+
+			// lets parse the message and hand off to the runUpdates function
+			event, err := parseCloudWatchEvent(message)
 			if err != nil {
-				log.Println("Error: ", err.Error())
-				slack.PostError(err)
+				log.Printf("Error parsing CloudWatch event: %v", err)
+				continue // Skip this message or handle the error as appropriate
 			}
 
-			// Set the Interval to the lowest TTL unless lower than 60
-			if lowestTTL > 120 {
-				interval = time.Duration(lowestTTL) * time.Second
-			} else {
-				interval = 120 * time.Second
+			runUpdates(testMode, config, event)
+
+			// Delete the message from the queue after processing
+			_, err = svc.DeleteMessage(&sqs.DeleteMessageInput{
+				QueueUrl:      &config.SQS.QueueURL,
+				ReceiptHandle: message.ReceiptHandle,
+			})
+
+			if err != nil {
+				log.Fatalf("Failed to delete message from queue, %v", err)
 			}
-			// fmt.Println("New Interval: ", interval)
+		}
+	}
+}
 
-			// Get the final list of subnets to approve
-			resolvedSubnets = append(resolvedSubnets, config.Subnets...)
-			resolvedSubnets = utils.Unique(resolvedSubnets)
+func runUpdates(testMode bool, config config.Config, event *cloudwatchevent.CloudTrailEvent) {
 
-			// Cases to handle: first run, no changes, changes
-			if firstRun {
-				currentSubnets = resolvedSubnets
-				firstRun = false
+	resolvedSubnets, _, err := utils.PerformDNSLookupsWithTTL(config.Sites, config.EnableIpv6)
+	if err != nil {
+		log.Println("Error: ", err.Error())
+		slack.PostError(err)
+	}
 
-				subnetsString := strings.Join(currentSubnets, ",")
+	// Get the final list of subnets to approve
+	resolvedSubnets = append(resolvedSubnets, config.Subnets...)
+	resolvedSubnets = utils.Unique(resolvedSubnets)
 
-				fullCommand := fmt.Sprintf(config.TailscaleCommand, subnetsString)
-				output := utils.RunShellCommand(fullCommand, testMode)
-				log.Println(string(output))
-				err = tailscale.SetTailscaleApprovedSubnets(resolvedSubnets)
-				if err != nil {
-					log.Println("Error: ", err.Error())
-					slack.PostError(err)
-					os.Exit(1)
-				}
+	log.Println("Resolved subnets: ", resolvedSubnets)
 
-				slack.PostRouteUpdate(resolvedSubnets, config.TailscaleclientId)
+	// format subnets as a string for the tailscale command
+	subnetsString := strings.Join(resolvedSubnets, ",")
 
-			} else if len(resolvedSubnets) == len(currentSubnets) {
+	// combine the command with the subnets
+	fullCommand := fmt.Sprintf(config.TailscaleCommand, subnetsString)
 
-				log.Println("No changes detected, moving along, New Interval: " + interval.String())
+	if testMode {
+		log.Println("Test mode enabled. Command: ", fullCommand)
+	} else {
+		// run the command
+		output := utils.RunShellCommand(fullCommand, testMode)
 
-			} else {
-				log.Println("Changes detected, updating, New Interval: " + interval.String())
+		// log the output
+		log.Println(string(output))
+	}
 
-				subnetsString := strings.Join(resolvedSubnets, ",")
+	networkDescription := event.Detail.RequestParameters.Description
+	slack.PostRouteUpdateSQS(networkDescription, config.TailscaleclientId)
 
-				fullCommand := fmt.Sprintf(config.TailscaleCommand, subnetsString)
-				output := utils.RunShellCommand(fullCommand, testMode)
-				log.Println(string(output))
-				err = tailscale.SetTailscaleApprovedSubnets(resolvedSubnets)
-				if err != nil {
-					log.Println("Error: ", err.Error())
-					slack.PostError(err)
-					os.Exit(1)
-				}
-
-				sleepChan = time.After(interval) // Reset sleep duration
-			}
+	if testMode {
+		log.Println("Test mode enabled, not updating tailscale routes.")
+	} else {
+		err = tailscale.SetTailscaleApprovedSubnets(resolvedSubnets)
+		if err != nil {
+			log.Println("Error: ", err.Error())
+			slack.PostError(err)
+			os.Exit(1)
 		}
 	}
 }

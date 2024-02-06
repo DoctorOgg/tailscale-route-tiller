@@ -18,11 +18,17 @@ type Config struct {
 	TailscaleclientId string   `yaml:"TailscaleclientId"`
 	TailscaleKey      string   `yaml:"TailscaleKey"`
 	Slack             Slack    `yaml:"Slack"`
+	SQS               SQS      `yaml:"SQS"`
 }
 
 type Slack struct {
 	WebhookURL string `yaml:"WebhookURL"`
 	Enabled    bool   `yaml:"Enabled"`
+}
+
+type SQS struct {
+	QueueURL string `yaml:"QueueURL"`
+	Region   string `yaml:"Region"`
 }
 
 var ActiveConfig *Config

@@ -24,7 +24,7 @@ var (
 
 func runUpdates(testMode bool, config config.Config) {
 
-	resolvedSubnets, _, err := utils.PerformDNSLookups(config.Sites, config.EnableIpv6)
+	resolvedSubnets, _, err := utils.PerformDNSLookupsWithTTL(config.Sites, config.EnableIpv6)
 	if err != nil {
 		log.Println("Error: ", err.Error())
 		slack.PostError(err)
@@ -127,7 +127,7 @@ func main() {
 	// worker Command
 	workerCmd := &cobra.Command{
 		Use:   "worker",
-		Short: "Run in worker mode, will run periodically, based on the lowest record TTL",
+		Short: "Run in worker mode, waits for an SQS messages, then runs the tailscale command to update the routes",
 		Run: func(cmd *cobra.Command, args []string) {
 			initConfig(ConfigFile)
 			worker.Run(testMode, *config.ActiveConfig)

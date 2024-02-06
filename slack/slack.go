@@ -73,6 +73,45 @@ func PostRouteUpdate(subnets []string, nodeID string) {
 	sendit(payload)
 }
 
+func PostRouteUpdateSQS(description string, nodeID string) {
+
+	// if !Enabled {
+	// 	return
+	// }
+
+	message := SlackMessage{
+		Blocks: []SlackBlock{
+			{
+				Type: "section",
+				Text: struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				}{
+					Type: "mrkdwn",
+					Text: "*Updating Advertised routes for Node ID:* " + nodeID,
+				},
+			},
+			{
+				Type: "section",
+				Text: struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				}{
+					Type: "mrkdwn",
+					Text: "*Description:* " + description,
+				},
+			},
+		},
+	}
+
+	payload, err := json.Marshal(message)
+	if err != nil {
+		log.Fatal("Error marshaling Slack message:", err)
+	}
+
+	sendit(payload)
+}
+
 func PostError(err error) {
 
 	if !Enabled {
