@@ -10,6 +10,7 @@ import (
 	"tailscale-route-tiller/slack"
 	"tailscale-route-tiller/tailscale"
 	"tailscale-route-tiller/utils"
+	"time"
 
 	"tailscale-route-tiller/cloudwatchevent"
 
@@ -72,6 +73,12 @@ func Run(testMode bool, config config.Config) {
 				log.Printf("Error parsing CloudWatch event: %v", err)
 				continue // Skip this message or handle the error as appropriate
 			}
+
+			// before running the udpate, we should wait for dns to settle
+
+			// lets wait for 2 minutes for DNS to settle
+			log.Println("Waiting for DNS to settle...")
+			time.Sleep(2 * time.Minute)
 
 			runUpdates(testMode, config, event)
 
