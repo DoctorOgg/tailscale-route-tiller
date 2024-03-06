@@ -50,7 +50,7 @@ func Run(testMode bool, config config.Config) {
 		result, err := svc.ReceiveMessage(&sqs.ReceiveMessageInput{
 			QueueUrl:            &config.SQS.QueueURL,
 			MaxNumberOfMessages: aws.Int64(1),
-			WaitTimeSeconds:     aws.Int64(300), // lets pull every 5 minutes
+			WaitTimeSeconds:     aws.Int64(20),
 		})
 
 		if err != nil {
